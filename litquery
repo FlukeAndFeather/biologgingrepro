@@ -1,0 +1,1 @@
+biologging OR biotelemetry OR ((animal OR wildlife) AND track* NOT video) OR (("animal-borne" OR "animal-attached") AND (sensor* OR device* OR tag*)) OR ((animal OR wildlife) AND (acceleromter OR magnetometer OR gyroscope))
