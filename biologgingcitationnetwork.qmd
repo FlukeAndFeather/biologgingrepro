@@ -69,7 +69,9 @@ What are the most cited? Red points indicate paper is in the original PubMed res
 ```{r}
 #| label: most-cited
 
-cite_count <- count(pubmed_cited, work_cited) %>% 
+cite_count <- pubmed_cited %>% 
+  mutate(work_cited = str_to_lower(work_cited)) %>% 
+  count(work_cited) %>% 
   arrange(desc(n)) %>% 
   mutate(is_pubmed = map_lgl(work_cited, ~ .x %in% pubmed$doi))
 
@@ -81,7 +83,7 @@ ggplot(with_rank, aes(rank, n)) +
   geom_line(color = "grey") +
   geom_point(data = filter(with_rank, is_pubmed), color = "red") +
   labs(x = "Citation rank",
-       y = "Number of citations") +
+       y = "Citations from PubMed query") +
   theme_minimal()
 ```
 
@@ -123,6 +125,7 @@ get_all_authors <- function(author_col) {
           })
 }
 
+# Save to CSV
 pubmed_cited_full %>% 
   transmute(container.title,
             created,
@@ -133,5 +136,15 @@ pubmed_cited_full %>%
             authors = get_all_authors(author)) %>%
   write_csv(here::here("data", "pubmed_cited_full.csv"))
 
-```
+# display top 10 most cited
+pubmed_cited_full %>% 
+  left_join(mutate(cite_count, work_cited = str_to_lower(work_cited)), 
+            by = c(doi = "work_cited")) %>% 
+  mutate(first.author = str_to_sentence(get_first_author(author))) %>% 
+  transmute(citation = str_glue("{first.author} ({str_sub(created, 1, 4)})"),
+            container = str_sub(container.title, 1, 20),
+            title = str_sub(str_to_sentence(title), 1, 20),
+            citations = n) %>% 
+  slice(1:10)
 
+```
