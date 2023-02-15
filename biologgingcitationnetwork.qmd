@@ -148,3 +148,97 @@ pubmed_cited_full %>%
   slice(1:10)
 
 ```
+
+477/634 papers contained bio-logging studies. Fetch cited-by papers for the 978 papers in the corpus so far using [COCI](https://opencitations.net/).
+
+```{r}
+pubmed_cited <- here::here("data", "pubmed-cited-pruned.xlsx") %>% 
+  readxl::read_excel() %>% 
+  filter(Retained == "y")
+
+```
+
+```{r}
+corpus_cited_by_path <- here::here("data", "corpus_cited_by.rds")
+if (!file.exists(corpus_cited_by_path)) {
+  get_citing_dois <- function(doi) {
+    api <- str_glue(
+      "https://opencitations.net/index/coci/api/v1/citations/{doi}"
+    )
+    res <- httr::GET(
+      api, 
+      httr::add_headers(
+        authorization = "9afada24-1686-44d7-988d-abc7bde42dbf"
+        )
+    )
+    if (res$status_code == 200) {
+      coci_data <- jsonlite::fromJSON(rawToChar(res$content))
+      if (length(coci_data) == 0) {
+        tibble(cited_doi = doi,
+               citing_doi = NA,
+               note = "DOI found, no citations")
+      } else {
+        tibble(cited_doi = doi,
+               citing_doi = coci_data$citing,
+               note = "DOI and citations found")
+      }
+    } else {
+      tibble(cited_doi = doi,
+             citing_doi = NA,
+             note = "DOI not found")
+    }
+  }
+
+  corpus_dois <- c(pubmed$doi, pubmed_cited$doi)
+  corpus_cited_by <- map_dfr(corpus_dois, get_citing_dois)
+  saveRDS(corpus_cited_by, corpus_cited_by_path)
+}
+
+corpus_cited_by <- readRDS(corpus_cited_by_path)
+
+```
+
+```{r}
+corpus_dois <- c(pubmed$doi, pubmed_cited$doi)
+corpus_cited_by_count <- corpus_cited_by %>% 
+  drop_na() %>% 
+  mutate(across(c(cited_doi, citing_doi), str_to_lower)) %>% 
+  filter(!citing_doi %in% corpus_dois) %>% 
+  group_by(citing_doi) %>% 
+  summarize(n_corpus = n()) %>% 
+  arrange(desc(n_corpus))
+knitr::kable(slice(corpus_cited_by_count, 1:25))
+corpus_cited_by_count %>% 
+  mutate(rank = row_number()) %>% 
+  ggplot(aes(rank, n_corpus)) +
+  geom_line() +
+  geom_hline(yintercept = c(2, 3, 5), col = "red") + 
+  labs(x = "Citing work",
+       y = "Corpus works cited") +
+  theme_classic()
+```
+
+Fetch metadata for the `r sum(corpus_cited_by_count$n_corpus >= 5)` works that cite 5+ corpus works.
+
+```{r}
+
+corpus_cited_by_meta_path <- here::here("data", "corpus_cited_by_meta.rds")
+if (!file.exists(corpus_cited_by_meta_path)) {
+  dois <- with(corpus_cited_by_count, citing_doi[n_corpus >= 5])
+  corpus_cited_by_meta <- cr_works(dois = dois)$data
+  saveRDS(corpus_cited_by_meta, corpus_cited_by_meta_path)
+} else {
+  corpus_cited_by_meta <- readRDS(corpus_cited_by_meta_path)
+}
+
+corpus_cited_by_meta %>% 
+  transmute(container.title,
+            created,
+            doi,
+            title,
+            type,
+            first.author = get_first_author(author),
+            authors = get_all_authors(author)) %>%
+  write_csv(here::here("data", "corpus_cited_by.csv"))
+
+```
